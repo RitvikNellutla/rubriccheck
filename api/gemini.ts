@@ -39,7 +39,7 @@ function cleanJson(text: string) {
 }
 
 export default async function handler(req: VercelRequest, res: VercelResponse) {
-  // CORS (safe default)
+  // CORS
   res.setHeader("Access-Control-Allow-Origin", "*");
   res.setHeader("Access-Control-Allow-Methods", "POST, OPTIONS");
   res.setHeader("Access-Control-Allow-Headers", "Content-Type");
@@ -48,9 +48,9 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
   if (req.method !== "POST") return res.status(405).send("Method Not Allowed");
 
   try {
-    const apiKey = process.env.GEMINI_API_KEY;
+    const apiKey = process.env.OPENAI_API_KEY;
     if (!apiKey) {
-      return res.status(500).json({ error: "Missing GEMINI_API_KEY env var" });
+      return res.status(500).json({ error: "Missing OPENAI_API_KEY env var" });
     }
 
     const body = (req.body ?? {}) as AnyJson;
@@ -70,39 +70,46 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
       prompt =
         context +
         "\nConversation:\n" +
-        msgs.map((m: AnyJson) => `${String(m.role || "").toUpperCase()}: ${m.text || ""}`).join("\n") +
+        msgs
+          .map((m: AnyJson) => `${String(m.role || "").toUpperCase()}: ${m.text || ""}`)
+          .join("\n") +
         "\n\nReply concisely.";
     } else {
       return res.status(400).json({ error: "Invalid task" });
     }
 
-    const resp = await fetch(
-      `https://generativelanguage.googleapis.com/v1beta/models/gemini-3-pro-preview:generateContent?key=${apiKey}`,
-      {
-        method: "POST",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({
-          contents: [{ parts: [{ text: prompt }] }],
-        }),
-      }
-    );
+    // ✅ OPENAI REQUEST
+    const resp = await fetch("https://api.openai.com/v1/chat/completions", {
+      method: "POST",
+      headers: {
+        "Content-Type": "application/json",
+        Authorization: `Bearer ${apiKey}`,
+      },
+      body: JSON.stringify({
+        model: "gpt-4o-mini",
+        messages: [
+          { role: "system", content: "You are a strict academic evaluator." },
+          { role: "user", content: prompt },
+        ],
+        temperature: 0.2,
+      }),
+    });
 
     const data = await resp.json();
 
     if (!resp.ok) {
       return res.status(resp.status).json({
-        error: data?.error?.message || "Gemini request failed",
+        error: data?.error?.message || "OpenAI request failed",
         data,
       });
     }
 
-    const text = data?.candidates?.[0]?.content?.parts?.[0]?.text || "";
+    const text = data?.choices?.[0]?.message?.content || "";
 
     if (task === "analyze" || task === "rewrite") {
       return res.status(200).send(cleanJson(text));
     }
 
-    // chat
     return res.status(200).json({ text });
   } catch (err: any) {
     return res.status(500).json({ error: err?.message || "Server error" });
