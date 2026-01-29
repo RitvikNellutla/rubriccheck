@@ -14,7 +14,7 @@ import { SYSTEM_INSTRUCTION } from "../constants";
 // Helpers
 // =====================
 
-const API_ENDPOINT = "/api/analyze";
+const API_ENDPOINT = "/api/gemini";
 
 async function generateFingerprint(data: any): Promise<string> {
   const msgUint8 = new TextEncoder().encode(JSON.stringify(data));
