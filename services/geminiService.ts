@@ -1,11 +1,7 @@
 import { AnalysisResult, ChatMessage, UploadedFile, CriterionResult } from "../types";
 import { SYSTEM_INSTRUCTION } from "../constants";
 
-const getApiKey = () => {
-  const key = import.meta.env.VITE_OPENAI_API_KEY;
-  if (!key) throw new Error("OpenAI API Key not found.");
-  return key;
-};
+/* ----------------------- helpers ----------------------- */
 
 async function generateFingerprint(data: any): Promise<string> {
   const msgUint8 = new TextEncoder().encode(JSON.stringify(data));
@@ -14,32 +10,30 @@ async function generateFingerprint(data: any): Promise<string> {
   return hashArray.map(b => b.toString(16).padStart(2, "0")).join("");
 }
 
-async function openaiRequest(messages: any[], temperature = 0) {
-  const response = await fetch("https://api.openai.com/v1/chat/completions", {
+async function openaiRequest(
+  messages: { role: "system" | "user" | "assistant"; content: string }[],
+  temperature = 0
+): Promise<string> {
+  const res = await fetch("/api/openai", {
     method: "POST",
-    headers: {
-      "Content-Type": "application/json",
-      Authorization: `Bearer ${getApiKey()}`
-    },
-    body: JSON.stringify({
-      model: "gpt-4o-mini",
-      temperature,
-      messages
-    })
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify({ messages, temperature })
   });
 
-  if (!response.ok) {
-    const errorText = await response.text();
-    console.error("OpenAI Error:", errorText);
+  if (!res.ok) {
+    const text = await res.text();
+    console.error("API error:", text);
     throw new Error("OpenAI request failed");
   }
 
-  const data = await response.json();
-  return data.choices?.[0]?.message?.content;
+  const data = await res.json();
+  return data.content;
 }
 
 const cleanJson = (text: string) =>
   text.replace(/```json|```/g, "").trim();
+
+/* -------------------- analyze essay -------------------- */
 
 export const analyzeEssay = async (
   rubric: string,
@@ -50,7 +44,6 @@ export const analyzeEssay = async (
   isStrict: boolean,
   workType: string = "General"
 ): Promise<AnalysisResult> => {
-
   const MIN_DELAY = 5000;
   const startAt = Date.now();
 
@@ -85,19 +78,17 @@ ${rubric}
 ESSAY:
 ${essay}
 
-Return STRICT JSON:
-{
-  "summary": {...},
-  "criteria": [...]
-}
+Return STRICT JSON with:
+summary + criteria.
 `;
 
-  const content = await openaiRequest([
-    { role: "system", content: SYSTEM_INSTRUCTION },
-    { role: "user", content: prompt }
-  ], 0.1);
-
-  if (!content) throw new Error("No response");
+  const content = await openaiRequest(
+    [
+      { role: "system", content: SYSTEM_INSTRUCTION },
+      { role: "user", content: prompt }
+    ],
+    0.1
+  );
 
   const parsed = JSON.parse(cleanJson(content)) as AnalysisResult;
 
@@ -111,12 +102,13 @@ Return STRICT JSON:
   return parsed;
 };
 
+/* ---------------- rewrite suggestion ---------------- */
+
 export const getRewriteSuggestion = async (
   criterion: CriterionResult,
   essay: string,
   rubric: string
 ): Promise<string[]> => {
-
   const fingerprint = await generateFingerprint({ criterion, essay, rubric });
   const cached = localStorage.getItem(`rewrite_${fingerprint}`);
   if (cached) return JSON.parse(cached);
@@ -135,18 +127,20 @@ Give 3 natural rewrites.
 Return JSON array.
 `;
 
-  const content = await openaiRequest([
-    { role: "system", content: "Humanize writing. Avoid robotic tone." },
-    { role: "user", content: prompt }
-  ], 0.7);
-
-  if (!content) return [];
+  const content = await openaiRequest(
+    [
+      { role: "system", content: "Humanize writing. Avoid robotic tone." },
+      { role: "user", content: prompt }
+    ],
+    0.7
+  );
 
   const parsed = JSON.parse(cleanJson(content));
   localStorage.setItem(`rewrite_${fingerprint}`, JSON.stringify(parsed));
-
   return parsed;
 };
+
+/* ---------------------- chat ---------------------- */
 
 export const getChatResponse = async (
   messages: ChatMessage[],
@@ -157,7 +151,6 @@ export const getChatResponse = async (
   essayExplanation: string,
   analysisResult: AnalysisResult | null
 ): Promise<string> => {
-
   const contextBlock = `
 You are helping with a graded assignment.
 
@@ -177,27 +170,25 @@ Only answer questions related to this assignment.
 Keep responses concise and helpful.
 `;
 
-  const formattedMessages = [
+  const formattedMessages: {
+    role: "system" | "user" | "assistant";
+    content: string;
+  }[] = [
     {
       role: "system",
       content: contextBlock
     },
-    ...messages.map((m) => {
-      const safeRole =
-        m.role === "model" ? "assistant" : m.role;
-
-      return {
-        role: safeRole as "user" | "assistant",
-        content: m.text
-      };
-    })
+    ...messages.map((m) => ({
+      role: (m.role === "model" ? "assistant" : m.role) as
+        | "user"
+        | "assistant",
+      content: m.text
+    }))
   ];
 
   try {
-    const content = await openaiRequest(formattedMessages, 0);
-    return content || "Try rephrasing.";
-  } catch (error) {
-    console.error(error);
+    return await openaiRequest(formattedMessages, 0);
+  } catch {
     return "Connection error.";
   }
 };
