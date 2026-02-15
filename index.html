@@ -4,51 +4,60 @@
     <meta charset="UTF-8" />
     <meta name="viewport" content="width=device-width, initial-scale=1.0" />
     <title>RubricCheck</title>
-    <link rel="preconnect" href="https://fonts.googleapis.com">
-    <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
-    <link href="https://fonts.googleapis.com/css2?family=Space+Grotesk:wght@600;700&family=Outfit:wght@300;400;500;600;700;800;900&family=Crimson+Pro:ital,wght@0,200..900;1,200..900&family=Inter:wght@400;500;600&display=swap" rel="stylesheet">
+
+    <!-- Fonts -->
+    <link rel="preconnect" href="https://fonts.googleapis.com" />
+    <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
+    <link
+      href="https://fonts.googleapis.com/css2?family=Space+Grotesk:wght@600;700&family=Outfit:wght@300;400;500;600;700;800;900&family=Crimson+Pro:ital,wght@0,200..900;1,200..900&family=Inter:wght@400;500;600&display=swap"
+      rel="stylesheet"
+    />
+
+    <!-- Tailwind CDN (OK for now) -->
     <script src="https://cdn.tailwindcss.com"></script>
+
     <script>
       tailwind.config = {
         theme: {
           extend: {
             colors: {
-              paper: '#fdfbf7', 
-              ink: '#1a1a1a',   
-              pencil: '#6b7280', 
-              highlight: '#fef3c7', 
-              success: '#dcfce7', 
-              successText: '#166534', 
-              weak: '#fef9c3', 
-              weakText: '#854d0e', 
-              missing: '#fee2e2', 
-              missingText: '#991b1b',
+              paper: "#fdfbf7",
+              ink: "#1a1a1a",
+              pencil: "#6b7280",
+              highlight: "#fef3c7",
+              success: "#dcfce7",
+              successText: "#166534",
+              weak: "#fef9c3",
+              weakText: "#854d0e",
+              missing: "#fee2e2",
+              missingText: "#991b1b",
             },
             fontFamily: {
-              sans: ['Inter', 'system-ui', 'sans-serif'],
-              display: ['Space Grotesk', 'sans-serif'],
-              outfit: ['Outfit', 'sans-serif'],
-              serif: ['Crimson Pro', 'Georgia', 'serif'],
+              sans: ["Inter", "system-ui", "sans-serif"],
+              display: ["Space Grotesk", "sans-serif"],
+              outfit: ["Outfit", "sans-serif"],
+              serif: ["Crimson Pro", "Georgia", "serif"],
             },
             animation: {
-              'spin-slow': 'spin 3s linear infinite',
-              'indeterminate-bar': 'indeterminate 2s infinite linear',
-              'fade-in': 'fadeIn 0.4s cubic-bezier(0.16, 1, 0.3, 1)',
+              "spin-slow": "spin 3s linear infinite",
+              "indeterminate-bar": "indeterminate 2s infinite linear",
+              "fade-in": "fadeIn 0.4s cubic-bezier(0.16, 1, 0.3, 1)",
             },
             keyframes: {
               indeterminate: {
-                '0%': { transform: 'translateX(-100%)' },
-                '100%': { transform: 'translateX(100%)' },
+                "0%": { transform: "translateX(-100%)" },
+                "100%": { transform: "translateX(100%)" },
               },
               fadeIn: {
-                '0%': { opacity: '0', transform: 'translateY(8px)' },
-                '100%': { opacity: '1', transform: 'translateY(0)' },
-              }
-            }
-          }
-        }
-      }
+                "0%": { opacity: "0", transform: "translateY(8px)" },
+                "100%": { opacity: "1", transform: "translateY(0)" },
+              },
+            },
+          },
+        },
+      };
     </script>
+
     <style>
       body {
         background-color: #fdfbf7;
@@ -60,14 +69,14 @@
         height: 6px;
       }
       ::-webkit-scrollbar-track {
-        background: transparent; 
+        background: transparent;
       }
       ::-webkit-scrollbar-thumb {
-        background: #e5e7eb; 
+        background: #e5e7eb;
         border-radius: 10px;
       }
       ::-webkit-scrollbar-thumb:hover {
-        background: #d1d5db; 
+        background: #d1d5db;
       }
       .lined-paper {
         background-image: linear-gradient(#e5e7eb 1px, transparent 1px);
@@ -75,21 +84,10 @@
         line-height: 2.4rem !important;
       }
     </style>
-  <script type="importmap">
-{
-  "imports": {
-    "react/": "https://esm.sh/react@^19.2.3/",
-    "react": "https://esm.sh/react@^19.2.3",
-    "react-dom/": "https://esm.sh/react-dom@^19.2.3/",
-    "@google/genai": "https://esm.sh/@google/genai@^1.33.0",
-    "jspdf": "https://esm.sh/jspdf@2.5.1"
-  }
-}
-</script>
-<link rel="stylesheet" href="/index.css">
-</head>
+  </head>
+
   <body>
     <div id="root"></div>
-  <script type="module" src="/index.tsx"></script>
-</body>
+    <script type="module" src="/index.tsx"></script>
+  </body>
 </html>
