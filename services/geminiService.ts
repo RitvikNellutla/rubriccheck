@@ -1,43 +1,50 @@
-import {
-  AnalysisResult,
-  ChatMessage,
-  UploadedFile,
-  CriterionResult,
-} from "../types";
+import { AnalysisResult, ChatMessage, UploadedFile, CriterionResult } from "../types";
 import { SYSTEM_INSTRUCTION } from "../constants";
+
+/* ---------- types ---------- */
+
+type OpenAIMessage = {
+  role: "system" | "user" | "assistant";
+  content: string;
+};
 
 /* ---------- helpers ---------- */
 
-async function generateFingerprint(data: any): Promise<string> {
-  const msgUint8 = new TextEncoder().encode(JSON.stringify(data));
-  const hashBuffer = await crypto.subtle.digest("SHA-256", msgUint8);
-  const hashArray = Array.from(new Uint8Array(hashBuffer));
-  return hashArray.map(b => b.toString(16).padStart(2, "0")).join("");
-}
-
-async function callChatAPI(
-  messages: { role: "system" | "user" | "assistant"; content: string }[],
-  temperature = 0
-): Promise<string> {
-  const res = await fetch("/api/chat", {
-    method: "POST",
-    headers: { "Content-Type": "application/json" },
-    body: JSON.stringify({ messages, temperature }),
-  });
-
-  if (!res.ok) {
-    const err = await res.text();
-    throw new Error(err || "Chat API failed");
-  }
-
-  const data = await res.json();
-  return data.content;
-}
+const sleep = (ms: number) => new Promise(res => setTimeout(res, ms));
 
 const cleanJson = (text: string) =>
   text.replace(/```json|```/g, "").trim();
 
-/* ---------- analysis ---------- */
+/* ---------- OPENAI (DIRECT, FRONTEND) ---------- */
+
+async function callOpenAI(
+  messages: OpenAIMessage[],
+  temperature = 0
+): Promise<string> {
+  const res = await fetch("https://api.openai.com/v1/chat/completions", {
+    method: "POST",
+    headers: {
+      "Content-Type": "application/json",
+      Authorization: `Bearer ${import.meta.env.VITE_OPENAI_API_KEY}`,
+    },
+    body: JSON.stringify({
+      model: "gpt-4o-mini",
+      messages,
+      temperature,
+    }),
+  });
+
+  if (!res.ok) {
+    const text = await res.text();
+    console.error("OPENAI ERROR:", text);
+    throw new Error("OPENAI_FAILED");
+  }
+
+  const data = await res.json();
+  return data.choices?.[0]?.message?.content ?? "";
+}
+
+/* ---------- ANALYSIS ---------- */
 
 export const analyzeEssay = async (
   rubric: string,
@@ -48,16 +55,9 @@ export const analyzeEssay = async (
   isStrict: boolean,
   workType = "General"
 ): Promise<AnalysisResult> => {
-  const fingerprint = await generateFingerprint({
-    rubric,
-    essay,
-    essayExplanation,
-    isStrict,
-    workType,
-  });
+  console.log("🔥 analyzeEssay fired");
 
-  const cached = localStorage.getItem(`analysis_${fingerprint}`);
-  if (cached) return JSON.parse(cached);
+  await sleep(500); // keep UX delay
 
   const prompt = `
 ${SYSTEM_INSTRUCTION}
@@ -71,21 +71,22 @@ ${rubric}
 ESSAY:
 ${essay}
 
-Return ONLY valid JSON in this shape:
-
+OUTPUT FORMAT (MANDATORY JSON):
 {
-  "criteria": {
-    "<criterion_name>": {
-      "score": "Met | Weak | Missing",
-      "why": "<short explanation>",
-      "evidence": "<quoted or referenced text>",
-      "exact_fix": "<specific fix>"
-    }
+  "criterion_name": {
+    "score": "met | weak | missing",
+    "why": "...",
+    "evidence": "...",
+    "exact_fix": "..."
   }
 }
+
+Return ONLY valid JSON.
+No markdown.
+No commentary.
 `;
 
-  const content = await callChatAPI(
+  const rawText = await callOpenAI(
     [
       { role: "system", content: SYSTEM_INSTRUCTION },
       { role: "user", content: prompt },
@@ -93,72 +94,92 @@ Return ONLY valid JSON in this shape:
     0.1
   );
 
-  const raw = JSON.parse(cleanJson(content));
+  console.log("🧠 AI RAW:", rawText);
 
-  const criteria: CriterionResult[] = Object.entries(raw.criteria || {}).map(
-    ([key, value]: any) => {
-      const status =
-        value.score?.toLowerCase() === "met"
-          ? "met"
-          : value.score?.toLowerCase() === "weak"
-          ? "weak"
-          : "missing";
+  let raw: Record<string, any>;
+  try {
+    raw = JSON.parse(cleanJson(rawText));
+  } catch {
+    console.error("❌ INVALID JSON FROM AI:", rawText);
+    throw new Error("INVALID_AI_JSON");
+  }
 
-      return {
-        criterion: key.replace(/_/g, " "),
-        status,
-        why: value.why || "",
-        evidence: value.evidence || "",
-        exact_fix: value.exact_fix || "",
-      };
-    }
+  const criteria: CriterionResult[] = Object.entries(raw).map(
+    ([key, value]: any) => ({
+      criterion: key.replace(/_/g, " "),
+      status: (value.score || "missing").toLowerCase(),
+      why: value.why ?? "",
+      evidence: value.evidence ?? "",
+      exact_fix: value.exact_fix ?? "",
+    })
   );
 
-  const met = criteria.filter(c => c.status === "met").length;
-  const weak = criteria.filter(c => c.status === "weak").length;
-  const missing = criteria.filter(c => c.status === "missing").length;
-  const total = criteria.length || 1;
-
-  const score = Math.round(((met + weak * 0.5) / total) * 100);
-  const aiScore = Math.max(0, Math.min(100, 100 - score + 10));
-
-  const parsed: AnalysisResult = {
+  return {
     summary: {
-      score,
-      ai_score: aiScore,
+      score: criteria.length,
+      ai_score: criteria.filter(c => c.status === "met").length,
       ai_analysis: {
-        risk_level: aiScore > 70 ? "high" : aiScore > 40 ? "moderate" : "low",
-        verdict_summary:
-          aiScore > 70
-            ? "High likelihood of AI involvement."
-            : aiScore > 40
-            ? "Moderate AI patterns detected."
-            : "Low AI likelihood.",
+        risk_level: "low",
+        verdict_summary: "Analysis completed.",
         indicators: [],
       },
-      met,
-      weak,
-      missing,
-      top_fixes: criteria
-        .filter(c => c.status !== "met")
-        .slice(0, 3)
-        .map(c => ({
-          fix: c.criterion,
-          reason: c.exact_fix || c.why,
-        })),
+      met: criteria.filter(c => c.status === "met").length,
+      weak: criteria.filter(c => c.status === "weak").length,
+      missing: criteria.filter(c => c.status === "missing").length,
+      top_fixes: [],
     },
     criteria,
   };
-
-  localStorage.setItem(
-    `analysis_${fingerprint}`,
-    JSON.stringify(parsed)
-  );
-
-  return parsed;
 };
 
-/* ---------- rewrite ---------- */
+/* ---------- CHAT ---------- */
+
+export const getChatResponse = async (
+  messages: ChatMessage[],
+  rubric?: string,
+  rubricFiles?: any[],
+  essay?: string,
+  essayFiles?: any[],
+  essayExplanation?: string,
+  result?: any
+): Promise<string> => {
+  const systemPrompt = `
+You are RubricCheck Assistant.
+
+ROLE:
+- You ONLY help explain rubric criteria, scores, and fixes.
+- You do NOT write essays.
+- You do NOT invent new requirements.
+- You ONLY reference the provided rubric, essay, and results.
+
+RULES:
+- Be concise.
+- Be specific.
+- If something is missing, say exactly why.
+- If user asks something unrelated, redirect them to the rubric.
+
+RUBRIC:
+${rubric || "N/A"}
+
+ESSAY:
+${essay || "N/A"}
+
+ANALYSIS RESULT:
+${result ? JSON.stringify(result, null, 2) : "N/A"}
+`;
+
+  const formatted = [
+    { role: "system", content: systemPrompt },
+    ...messages.map(m => ({
+      role: m.role === "model" ? "assistant" : "user",
+      content: m.text
+    }))
+  ] as { role: "system" | "user" | "assistant"; content: string }[];
+
+  return callOpenAI(formatted, 0.3);
+};
+
+/* ---------- REWRITE ---------- */
 
 export const getRewriteSuggestion = async (
   criterion: CriterionResult,
@@ -169,61 +190,23 @@ export const getRewriteSuggestion = async (
 Essay:
 ${essay}
 
-Fix this criterion:
+Criterion:
 ${criterion.criterion}
 
 Evidence:
 ${criterion.evidence}
 
-Give 3 natural rewrites.
+Provide 3 rewrite suggestions.
 Return JSON array only.
 `;
 
-  const content = await callChatAPI(
+  const content = await callOpenAI(
     [
-      { role: "system", content: "Write like a human. No AI tone." },
+      { role: "system", content: "Rewrite student work clearly and naturally." },
       { role: "user", content: prompt },
     ],
     0.7
   );
 
   return JSON.parse(cleanJson(content));
-};
-
-/* ---------- chat ---------- */
-
-export const getChatResponse = async (
-  messages: ChatMessage[],
-  rubric: string,
-  rubricFiles: UploadedFile[],
-  essay: string,
-  essayFiles: UploadedFile[],
-  essayExplanation: string,
-  analysisResult: AnalysisResult | null
-): Promise<string> => {
-  const systemContext = `
-You are helping with a graded assignment.
-
-RUBRIC:
-${rubric || "None"}
-
-ESSAY:
-${essay || "None"}
-
-SUMMARY:
-${analysisResult ? JSON.stringify(analysisResult.summary) : "None"}
-
-Stay concise and helpful.
-`;
-
-  const formatted: { role: "system" | "user" | "assistant"; content: string }[] =
-    [
-      { role: "system", content: systemContext },
-      ...messages.map(m => ({
-  role: (m.role === "model" ? "assistant" : "user") as "assistant" | "user",
-  content: m.text,
-})),
-    ];
-
-  return callChatAPI(formatted, 0);
 };

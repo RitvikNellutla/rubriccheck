@@ -1,4 +1,3 @@
-
 export interface TopFix {
   fix: string;
   reason: string;
@@ -6,7 +5,7 @@ export interface TopFix {
 
 export interface AIAnalysisIndicator {
   label: string;
-  value: number; // 0-100
+  value: number;
   description: string;
 }
 
@@ -19,22 +18,16 @@ export interface AIAnalysis {
 export interface CriterionResult {
   criterion: string;
   status: 'met' | 'weak' | 'missing';
-  userStatus?: 'met' | 'weak' | 'missing'; // Manual override
+  userStatus?: 'met' | 'weak' | 'missing';
   why: string;
   evidence: string;
   exact_fix: string;
-  visual_coordinates?: { 
-    x: number; 
-    y: number;
-    file_index?: number; 
-  }; 
-  rewrite_suggestion?: string;
 }
 
 export interface UploadedFile {
   name: string;
   mimeType: string;
-  data: string; // Base64 string
+  data: string;
 }
 
 export interface AppState {
@@ -43,7 +36,7 @@ export interface AppState {
   essay: string;
   essayFiles: UploadedFile[];
   essayExplanation: string;
-  workType: string; // e.g., 'Essay', 'Discussion', 'Presentation'
+  workType: string;
   isStrict: boolean;
   isRubricVague: boolean;
   isLoading: boolean;
